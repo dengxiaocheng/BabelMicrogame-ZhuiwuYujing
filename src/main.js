@@ -1,11 +1,22 @@
 // 坠物预警 — 主入口，连接状态/场景/循环
 
 (function () {
+  var WAVE_INTRO_FALLBACK = [
+    '', '注意塔上动态，识别危险前兆', '多个区域可能同时出现信号',
+    '小心! 有些前兆可能是假信号', '前兆变得模糊，判断更难了',
+    '假信号增多，信任你的直觉', '强前兆减少，需要更仔细观察',
+    '高风险波次! 误报代价增大', '大部分信号都很模糊了',
+    '接近终点，保持警觉', '最终波! 全力以赴!'
+  ];
+
   function enrichState(st) {
     st.precursor_events = (typeof ZhuiwuContent !== 'undefined') ?
       ZhuiwuContent.selectPrecursors(st.zones) : [];
-    st.waveIntro = (typeof ZhuiwuContent !== 'undefined') ?
-      ZhuiwuContent.getWaveIntro(st.wave) : '';
+    if (typeof ZhuiwuContent !== 'undefined') {
+      st.waveIntro = ZhuiwuContent.getWaveIntro(st.wave);
+    } else {
+      st.waveIntro = WAVE_INTRO_FALLBACK[st.wave] || '';
+    }
   }
 
   var state = ZhuiwuState.createInitialState();
