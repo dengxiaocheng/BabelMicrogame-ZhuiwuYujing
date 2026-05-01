@@ -1,0 +1,10 @@
+{
+  "name": "zhuiwu-yujing",
+  "version": "0.1.0",
+  "description": "坠物预警 — 识别塔上坠物前兆，决定何时让工人躲避而不耽误产量",
+  "private": true,
+  "scripts": {
+    "test": "node src/test.js"
+  },
+  "license": "UNLICENSED"
+}
