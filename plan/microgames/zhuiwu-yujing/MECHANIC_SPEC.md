@@ -3,25 +3,75 @@
 ## Primary Mechanic
 
 - mechanic: 危险模式识别 + 信号次数限制 + 产量损失
-- primary_input: 观察坠物前兆并点击/拖拽预警信号到危险区域
-- minimum_interaction: 玩家必须在有限 warning_tokens 内对具体区域发出或保留预警，权衡 quota 与 injury_risk
+- primary_input: 观察坠物前兆并拖拽预警旗到危险 Zone
+- minimum_interaction: 玩家在有限 warning_tokens 内对具体 Zone 发出或保留预警，权衡 quota 与 injury_risk
 
-## Mechanic Steps
+## Mechanic Steps（每波循环）
 
-1. 观察前兆图案
-2. 判断区域风险
-3. 投放预警旗或继续工作
-4. 结算 false_alarm/quota/injury_risk
+1. **前兆期开始**：wave++, warning_tokens 重置为 3。系统随机选择危险 Zone（1-3 个，取决于波次）。
+2. **显示前兆**：在每个危险 Zone 的塔上方展示对应前兆动画（见 Precursor Types 表）。前兆有持续时间（1.5-3s），可重复出现。
+3. **玩家操作**：玩家从底部旗帜栏拖拽预警旗到目标 Zone。每拖一个旗，warning_tokens--。已放的旗可点击回收（warning_tokens++）。
+4. **决策锁定**：前兆期结束，停止拖拽。未预警的 Zone 工人继续工作，已预警的 Zone 工人撤离。
+5. **结算**：对每个 Zone 独立结算（见 Settlement Matrix）。
+
+## Settlement Matrix
+
+| 情况 | quota | injury_risk | false_alarm |
+|------|-------|-------------|-------------|
+| 预警 + 真有坠物 | -（停工损失: 该Zone贡献值）| 0 | 0 |
+| 预警 + 无坠物 | -（停工损失: 该Zone贡献值）| 0 | +15 |
+| 未预警 + 真有坠物 | +（不损失）| +25 | 0 |
+| 未预警 + 无坠物 | +（正常贡献）| 0 | 0 |
+
+- quota 变化：预警的 Zone 停工（-贡献值），未预警且安全的 Zone 正常贡献（+贡献值）
+- 每波 base quota 恢复 = 所有安全 Zone 的贡献之和 - 预警 Zone 的贡献损失
+- 净 quota 变化 = 安全贡献 - 预警损失。如果所有 Zone 都被预警且无坠物，quota 净减少
+
+## Per-Wave Danger Configuration
+
+| Wave | 危险Zone数 | 假信号概率 | 前兆模糊度 | 说明 |
+|------|-----------|-----------|-----------|------|
+| 1 | 1 | 10% | 低 | 教学：单一明显前兆 |
+| 2 | 1 | 10% | 低 | 教学：强化基本操作 |
+| 3 | 1-2 | 25% | 中 | 多Zone危险引入 |
+| 4 | 1-2 | 25% | 中 | 玩家开始权衡 |
+| 5 | 2 | 40% | 高 | 模糊前兆，多Zone |
+| 6 | 2-3 | 40% | 高 | 3 Zone同时可能 |
+| 7 | 2 | 30% | 极高 | 高惩罚模糊前兆 |
+| 8 | 2-3 | 30% | 极高 | 最终波，高紧张 |
+
+- "假信号概率"：某个显示前兆的 Zone 实际无坠物的概率
+- "前兆模糊度"：影响前兆动画的持续时间和明显程度
+
+## Precursor Types
+
+| 前兆 | 视觉效果 | 可靠度 | 出现波次 |
+|------|---------|--------|---------|
+| 大阴影 | Zone上方出现深色矩形阴影，持续2s | 高 | 1-8 |
+| 梁晃动 | 塔上方横梁左右晃动，持续1.5s | 高 | 1-8 |
+| 碎石掉落 | 小颗粒从Zone上方散落，持续1s | 中 | 3-8 |
+| 灰尘扩散 | Zone上方弥漫灰色粒子，持续2.5s | 低 | 5-8 |
+| 裂缝出现 | Zone旁塔面出现裂纹，持续1.5s | 中 | 4-8 |
+
+- 每波根据模糊度选择前兆类型组合
+- 假信号使用相同前兆动画，但对应 Zone 无实际坠物
 
 ## State Coupling
 
 每次有效操作必须同时推动两类后果：
 
-- 生存/资源/进度压力：从 Required State 中选择至少一个直接变化
-- 关系/风险/秩序压力：从 Required State 中选择至少一个直接变化
+- **生存/资源/进度压力**：quota 变化（停工损失 vs 正常贡献）
+- **关系/风险/秩序压力**：injury_risk 或 false_alarm 变化（漏报受伤 vs 误报信任损失）
+
+## Edge Cases
+
+1. **不操作整波**：所有 Zone 未预警。危险 Zone 造成 injury_risk 累积，安全 Zone 正常贡献 quota。可能直接触发工伤结局。
+2. **tokens 不用完**：合法策略，保守玩家可能只放 1-2 面旗。
+3. **超时未拖完**：前兆期结束自动锁定，已拖的旗生效，未拖的不生效。
+4. **回收旗**：决策锁定前可回收已放置的旗（warning_tokens 回退），锁定后不可回收。
 
 ## Not A Choice List
 
 - 不能只展示 2-4 个文字按钮让玩家选择
-- UI worker 必须把 primary input 映射到场景对象操作
-- integration worker 必须让这个操作进入状态结算，而不是只写叙事反馈
+- UI worker 必须把 primary input 映射到场景对象操作（拖拽预警旗到 Zone）
+- integration worker 必须让拖拽操作进入状态结算，而不是只写叙事反馈
