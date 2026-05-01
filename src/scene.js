@@ -87,6 +87,14 @@ var ZhuiwuScene = (function () {
         ctx.fillStyle = 'rgba(0,0,0,0.2)';
         ctx.fillRect(z.x + 24, z.ty + 14, z.w - 48, z.th * 0.25);
       }
+      // 前兆事件描述（内容池）
+      var pe = state.precursor_events && state.precursor_events[i];
+      if (pe && state.phase !== 'RESOLVE') {
+        ctx.fillStyle = '#FFE';
+        ctx.font = '11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(pe.desc, z.cx, z.ty + z.th * 0.7);
+      }
       // 区域标签
       ctx.fillStyle = '#333';
       ctx.font = '13px sans-serif';
@@ -107,11 +115,15 @@ var ZhuiwuScene = (function () {
       // 结算结果
       if (state.results && state.results[i]) {
         var r = state.results[i];
-        var lbl = '', col = '#000';
-        if (r.outcome === 'dodged')    { lbl = '躲避 -5产量'; col = '#FFA500'; }
-        if (r.outcome === 'injury')    { lbl = '受伤!';       col = '#F00'; }
-        if (r.outcome === 'false_alarm'){ lbl = '误报 -10';   col = '#F60'; }
-        if (r.outcome === 'safe')      { lbl = '安全 +10';    col = '#0A0'; }
+        var col = '#000';
+        if (r.outcome === 'dodged') col = '#FFA500';
+        else if (r.outcome === 'injury') col = '#F00';
+        else if (r.outcome === 'false_alarm') col = '#F60';
+        else col = '#0A0';
+        var deltaStr = (r.quotaDelta >= 0 ? '+' : '') + r.quotaDelta;
+        var lbl = (typeof ZhuiwuContent !== 'undefined') ?
+          ZhuiwuContent.getOutcomeFeedback(r.outcome).text + ' ' + deltaStr :
+          r.outcome + ' ' + deltaStr;
         ctx.fillStyle = 'rgba(255,255,255,0.9)';
         ctx.fillRect(z.x + 4, z.wy + z.wh + 18, z.w - 8, 22);
         ctx.fillStyle = col;
@@ -134,6 +146,17 @@ var ZhuiwuScene = (function () {
     ctx.fillText('误报: ' + state.false_alarm, 380, 19);
     ctx.textAlign = 'right';
     ctx.fillText('阶段: ' + state.phase, w - 8, 19);
+
+    // 波次开场提示（内容池）
+    if (state.waveIntro && state.phase === 'OBSERVE') {
+      ctx.fillStyle = 'rgba(60,30,0,0.6)';
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'center';
+      var tw = ctx.measureText(state.waveIntro).width + 24;
+      ctx.fillRect(w / 2 - tw / 2, 30, tw, 20);
+      ctx.fillStyle = '#FFD700';
+      ctx.fillText(state.waveIntro, w / 2, 44);
+    }
 
     // 预警旗池（可拖拽）
     if (state.phase === 'WARN') {
@@ -177,8 +200,10 @@ var ZhuiwuScene = (function () {
       ctx.fillStyle = '#FFF';
       ctx.font = 'bold 28px sans-serif';
       ctx.textAlign = 'center';
-      if (state.result === 'complete') ctx.fillText('完成! 最终产量: ' + state.quota, w / 2, h * 0.5);
-      else ctx.fillText('状态崩溃! 产量: ' + state.quota, w / 2, h * 0.5);
+      var endMsg = (typeof ZhuiwuContent !== 'undefined') ? ZhuiwuContent.getEndingText(state) : '游戏结束';
+      ctx.fillText(endMsg, w / 2, h * 0.47);
+      ctx.font = '16px sans-serif';
+      ctx.fillText('最终产量: ' + state.quota + '  风险: ' + state.injury_risk, w / 2, h * 0.55);
     }
   }
 
