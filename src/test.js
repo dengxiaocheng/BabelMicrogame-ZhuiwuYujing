@@ -388,4 +388,152 @@ var C = require('./content/events.js');
   console.log('PASS: 集成重启后内容充实正确');
 })();
 
-console.log('\n全部 23 个测试通过 (16 状态 + 7 集成)');
+// === QA: Direction Lock 验收补充测试 ===
+
+// 24. 产量崩溃路径 — quota <= 0 触发 collapse 结局
+(function () {
+  var st = S.createInitialState();
+  st.zones = [
+    { index: 0, dangerous: true, precursor: 'strong' },
+    { index: 1, dangerous: true, precursor: 'strong' },
+    { index: 2, dangerous: true, precursor: 'strong' }
+  ];
+  st.warnings = [false, false, false];
+  st.phase = 'WARN';
+  st.quota = 10; // 3 * (-15) = -45, will go to -35
+  S.resolveWave(st);
+  assert.strictEqual(st.gameOver, true, '产量<=0 应结束');
+  assert.strictEqual(st.result, 'collapse', '产量崩溃应为 collapse');
+  console.log('PASS: 产量崩溃路径正确');
+})();
+
+// 25. Scripted Playthrough — 完整核心循环验证（按 ACCEPTANCE_PLAYTHROUGH）
+// 开局 -> 显示状态 -> 观察前兆 -> 发出预警 -> 结算 -> 反馈 -> 推进
+(function () {
+  // Step 1: 开局验证所有 Required State
+  var st = S.createInitialState();
+  assert.ok(st.warning_tokens !== undefined, 'warning_tokens 应存在');
+  assert.ok(st.quota !== undefined, 'quota 应存在');
+  assert.ok(st.injury_risk !== undefined, 'injury_risk 应存在');
+  assert.ok(st.false_alarm !== undefined, 'false_alarm 应存在');
+  assert.ok(st.wave !== undefined, 'wave 应存在');
+
+  // Step 2: 观察前兆 — 生成波次
+  S.generateWave(st);
+  assert.strictEqual(st.zones.length, S.ZONE_COUNT, '应有区域');
+  st.precursor_events = C.selectPrecursors(st.zones);
+  st.waveIntro = C.getWaveIntro(st.wave);
+
+  // Step 3: 发出预警 — primary input: 拖拽预警旗到区域
+  S.startWarnPhase(st);
+  // 对第一个有前兆的区域发出预警（模拟拖拽操作 -> state delta）
+  var warnedZone = -1;
+  for (var i = 0; i < st.zones.length; i++) {
+    if (st.zones[i].precursor !== 'none') { warnedZone = i; break; }
+  }
+  if (warnedZone >= 0) {
+    var r = S.issueWarning(st, warnedZone);
+    assert.strictEqual(r.ok, true, '发出预警应成功');
+    assert.strictEqual(st.warnings[warnedZone], true, '区域应标记已预警');
+    assert.strictEqual(st.warning_tokens, 2, '预警次数应减 1');
+  }
+
+  // Step 4: 结算 — 工人反应 + 事故/产量结算
+  S.resolveWave(st);
+  assert.strictEqual(st.phase, 'RESOLVE', '应为 RESOLVE');
+  assert.ok(st.results !== null, '应有结算结果');
+
+  // Step 5: 验证资源压力变化 (quota delta)
+  var totalQuotaDelta = 0;
+  for (var i = 0; i < st.results.length; i++) {
+    totalQuotaDelta += st.results[i].quotaDelta;
+    assert.ok(st.results[i].quotaDelta !== undefined, '结果应有 quotaDelta');
+    assert.ok(st.results[i].riskDelta !== undefined, '结果应有 riskDelta');
+  }
+  assert.strictEqual(st.quota, 100 + totalQuotaDelta, '产量应反映结算');
+
+  // Step 6: 验证风险/关系变化 (injury_risk delta)
+  var totalRiskDelta = 0;
+  for (var i = 0; i < st.results.length; i++) totalRiskDelta += st.results[i].riskDelta;
+  assert.strictEqual(st.injury_risk, Math.max(0, totalRiskDelta), '风险应反映结算');
+
+  // Step 7: 推进到下一波
+  if (!st.gameOver) {
+    S.advanceToNextWave(st);
+    assert.strictEqual(st.wave, 2, '波次应推进');
+    assert.strictEqual(st.phase, 'OBSERVE', '新波次应为 OBSERVE');
+  }
+  console.log('PASS: Scripted Playthrough 核心循环完整');
+})();
+
+// 26. 预警旗操作 -> state delta 耦合（验证不是 choice-only）
+// 直接验证 primary input (issueWarning) -> 产出可追踪的 state 变化
+(function () {
+  var st = S.createInitialState();
+  st.zones = [
+    { index: 0, dangerous: true, precursor: 'strong' },
+    { index: 1, dangerous: false, precursor: 'weak' },
+    { index: 2, dangerous: false, precursor: 'none' }
+  ];
+  st.warnings = [false, false, false];
+  st.phase = 'WARN';
+
+  // 记录操作前状态
+  var tokensBefore = st.warning_tokens;
+
+  // primary input: 对区域 0 发出预警
+  var r = S.issueWarning(st, 0);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(st.warning_tokens, tokensBefore - 1, '操作应消耗 token');
+  assert.strictEqual(st.warnings[0], true, '操作应标记区域');
+
+  // 结算并验证 state delta 可追溯到操作
+  S.resolveWave(st);
+  // 区域 0: dangerous + warned = dodged -> quota -5, risk -3
+  assert.strictEqual(st.results[0].outcome, 'dodged');
+  assert.strictEqual(st.results[0].quotaDelta, -5);
+  assert.strictEqual(st.results[0].riskDelta, -3);
+  // 区域 1: safe + no warn = safe -> quota +10
+  assert.strictEqual(st.results[1].outcome, 'safe');
+  assert.strictEqual(st.results[1].quotaDelta, 10);
+  console.log('PASS: primary input -> state delta 耦合验证');
+})();
+
+// 27. 多波次完整推进直到结束（覆盖失败或结局）
+(function () {
+  var st = S.createInitialState();
+  // 快速推到高波次模拟后期压力
+  for (var w = 1; w <= S.MAX_WAVES; w++) {
+    S.generateWave(st);
+    st.phase = 'WARN';
+    st.warnings = [];
+    for (var i = 0; i < S.ZONE_COUNT; i++) st.warnings.push(false);
+    // 全部不预警，模拟高风险策略
+    S.resolveWave(st);
+    if (st.gameOver) break;
+    if (w < S.MAX_WAVES) S.advanceToNextWave(st);
+  }
+  assert.strictEqual(st.gameOver, true, '多波次推进应触发结束');
+  assert.ok(st.result === 'collapse' || st.result === 'complete',
+    '应有可结算结局: ' + st.result);
+  console.log('PASS: 多波次推进至结局 (result=' + st.result + ')');
+})();
+
+// 28. Token 补充 — 波次推进后 token 恢复
+(function () {
+  var st = S.createInitialState();
+  S.generateWave(st);
+  S.startWarnPhase(st);
+  S.issueWarning(st, 0);
+  S.issueWarning(st, 1);
+  assert.strictEqual(st.warning_tokens, 1, '使用 2 个后应剩 1');
+  S.resolveWave(st);
+  if (!st.gameOver) {
+    S.advanceToNextWave(st);
+    assert.strictEqual(st.warning_tokens, Math.min(1 + 2, S.INITIAL_TOKENS + 1),
+      '波次推进应补充 token (上限+1)');
+  }
+  console.log('PASS: Token 补充机制正确');
+})();
+
+console.log('\n全部 28 个测试通过 (16 状态 + 7 集成 + 5 QA)');
