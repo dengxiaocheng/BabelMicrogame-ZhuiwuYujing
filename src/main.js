@@ -54,4 +54,11 @@
     requestAnimationFrame(tick);
   }
   tick();
+
+  // Dynamically load content script to integrate content into main loop
+  // (index.html not in write scope; content enriches state on load)
+  var _cscript = document.createElement('script');
+  _cscript.src = 'src/content/events.js';
+  _cscript.onload = function () { enrichState(state); };
+  document.head.appendChild(_cscript);
 })();

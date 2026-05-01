@@ -264,4 +264,128 @@ var S = require('./state.js');
   console.log('PASS: injury 双压力耦合正确');
 })();
 
-console.log('\n全部 16 个测试通过');
+console.log('\n全部 16 个状态测试通过');
+
+// === Content + Integration Tests ===
+var C = require('./content/events.js');
+
+// 17. Content — selectPrecursors enrichment
+(function () {
+  var st = S.createInitialState();
+  S.generateWave(st);
+  var events = C.selectPrecursors(st.zones);
+  assert.strictEqual(events.length, S.ZONE_COUNT, '前兆事件数应等于区域数');
+  for (var i = 0; i < events.length; i++) {
+    var z = st.zones[i];
+    if (z.precursor === 'none') {
+      assert.strictEqual(events[i], null, '无前兆区域应返回 null');
+    } else {
+      assert.ok(events[i] !== null, '有前兆区域应返回事件');
+      assert.ok(events[i].id, '事件应有 id');
+      assert.ok(events[i].desc, '事件应有 desc');
+    }
+  }
+  console.log('PASS: Content 前兆选择正确');
+})();
+
+// 18. Content — outcome feedback for all outcomes
+(function () {
+  var outcomes = ['dodged', 'injury', 'false_alarm', 'safe'];
+  for (var i = 0; i < outcomes.length; i++) {
+    var fb = C.getOutcomeFeedback(outcomes[i]);
+    assert.ok(fb.text, outcomes[i] + ' 反馈应有 text');
+    assert.ok(fb.detail !== undefined, outcomes[i] + ' 反馈应有 detail');
+  }
+  console.log('PASS: Content 结局反馈正确');
+})();
+
+// 19. Content — wave intros
+(function () {
+  for (var w = 1; w <= S.MAX_WAVES; w++) {
+    var intro = C.getWaveIntro(w);
+    assert.ok(intro.length > 0, '波次 ' + w + ' 应有开场文本');
+  }
+  console.log('PASS: Content 波次开场正确');
+})();
+
+// 20. Content — ending text by collapse reason
+(function () {
+  var st1 = S.createInitialState(); st1.result = 'complete';
+  assert.ok(C.getEndingText(st1).indexOf('安全') >= 0, '完成结局应提及安全');
+  var st2 = S.createInitialState(); st2.injury_risk = 60;
+  assert.ok(C.getEndingText(st2).indexOf('工伤') >= 0, '受伤崩溃应提及工伤');
+  var st3 = S.createInitialState(); st3.quota = 0;
+  assert.ok(C.getEndingText(st3).indexOf('产量') >= 0, '产量崩溃应提及产量');
+  var st4 = S.createInitialState(); st4.false_alarm = 8;
+  assert.ok(C.getEndingText(st4).indexOf('误报') >= 0, '误报崩溃应提及误报');
+  console.log('PASS: Content 结局文本正确');
+})();
+
+// 21. Integration — full loop with content enrichment
+(function () {
+  var st = S.createInitialState();
+  S.generateWave(st);
+  st.precursor_events = C.selectPrecursors(st.zones);
+  st.waveIntro = C.getWaveIntro(st.wave);
+  assert.ok(st.precursor_events.length === S.ZONE_COUNT, 'enriched 前兆事件数');
+  assert.ok(st.waveIntro.length > 0, 'enriched 波次开场');
+
+  S.startWarnPhase(st);
+  assert.strictEqual(st.phase, 'WARN');
+  S.issueWarning(st, 0);
+  S.resolveWave(st);
+  assert.strictEqual(st.phase, 'RESOLVE');
+  assert.ok(st.results !== null, '应有结算结果');
+
+  for (var i = 0; i < st.results.length; i++) {
+    var fb = C.getOutcomeFeedback(st.results[i].outcome);
+    assert.ok(fb.text, '结算反馈应有 text for ' + st.results[i].outcome);
+  }
+
+  if (!st.gameOver) {
+    S.advanceToNextWave(st);
+    st.precursor_events = C.selectPrecursors(st.zones);
+    st.waveIntro = C.getWaveIntro(st.wave);
+    assert.strictEqual(st.wave, 2, '波次应推进到 2');
+    assert.ok(st.precursor_events.length === S.ZONE_COUNT, '新波次前兆事件');
+  }
+  console.log('PASS: 集成完整主循环通过');
+})();
+
+// 22. Content — precursor events reference scene objects
+(function () {
+  var sceneObjects = ['塔结构', '钢梁', '阴影'];
+  var allEvents = C.PRECURSOR_EVENTS.strong.concat(C.PRECURSOR_EVENTS.weak);
+  var found = {};
+  for (var i = 0; i < allEvents.length; i++) found[allEvents[i].object] = true;
+  for (var j = 0; j < sceneObjects.length; j++) {
+    assert.ok(found[sceneObjects[j]], '应有场景对象 ' + sceneObjects[j] + ' 的事件');
+  }
+  console.log('PASS: Content 前兆覆盖场景对象');
+})();
+
+// 23. Integration — content enrichment on restart
+(function () {
+  var st = S.createInitialState();
+  st.zones = [
+    { index: 0, dangerous: true, precursor: 'strong' },
+    { index: 1, dangerous: true, precursor: 'strong' },
+    { index: 2, dangerous: true, precursor: 'strong' }
+  ];
+  st.warnings = [false, false, false];
+  st.phase = 'WARN';
+  st.injury_risk = 40;
+  S.resolveWave(st);
+  assert.strictEqual(st.gameOver, true, '应游戏结束');
+
+  st = S.createInitialState();
+  S.generateWave(st);
+  st.precursor_events = C.selectPrecursors(st.zones);
+  st.waveIntro = C.getWaveIntro(st.wave);
+  assert.strictEqual(st.phase, 'OBSERVE', '重启后应为 OBSERVE');
+  assert.strictEqual(st.gameOver, false, '重启后不应结束');
+  assert.ok(st.precursor_events.length === S.ZONE_COUNT, '重启后前兆事件');
+  console.log('PASS: 集成重启后内容充实正确');
+})();
+
+console.log('\n全部 23 个测试通过 (16 状态 + 7 集成)');
