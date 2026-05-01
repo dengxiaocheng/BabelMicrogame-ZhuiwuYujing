@@ -86,6 +86,7 @@ var S = require('./state.js');
   S.resolveWave(st);
   assert.strictEqual(st.results[0].outcome, 'injury', '危险+无预警=受伤');
   assert.strictEqual(st.injury_risk, 20, '受伤风险应增加');
+  assert.strictEqual(st.quota, 105, '受伤应扣产量(资源+风险双压力)');
   console.log('PASS: 危险+无预警结算正确');
 })();
 
@@ -103,6 +104,7 @@ var S = require('./state.js');
   assert.strictEqual(st.results[0].outcome, 'false_alarm', '安全+预警=误报');
   assert.strictEqual(st.false_alarm, 1, '误报应 +1');
   assert.strictEqual(st.quota, 110, '误报-10，另两区安全各+10');
+  assert.strictEqual(st.injury_risk, 3, '误报应增加受伤风险(资源+风险双压力)');
   console.log('PASS: 安全+预警结算正确');
 })();
 
@@ -170,4 +172,96 @@ var S = require('./state.js');
   console.log('PASS: 游戏完成判定正确');
 })();
 
-console.log('\n全部 ' + 11 + ' 个测试通过');
+// 12. 波次难度配置
+(function () {
+  assert.strictEqual(S.WAVE_DIFFICULTY.length, 11, '应有 11 个难度配置');
+  assert.strictEqual(S.WAVE_DIFFICULTY[0], null, '索引 0 应为 null');
+  assert.strictEqual(S.WAVE_DIFFICULTY[1][0], 0.3, '第1波危险率 0.3');
+  assert.strictEqual(S.WAVE_DIFFICULTY[1][1], 0.9, '第1波强前兆率 0.9');
+  assert.strictEqual(S.WAVE_DIFFICULTY[1][2], 0.0, '第1波无假信号');
+  assert.strictEqual(S.WAVE_DIFFICULTY[10][0], 0.7, '第10波危险率 0.7');
+  assert.strictEqual(S.WAVE_DIFFICULTY[10][1], 0.1, '第10波强前兆率 0.1');
+  assert.strictEqual(S.WAVE_DIFFICULTY[10][2], 0.5, '第10波假信号率 0.5');
+  // 难度递增验证
+  assert.ok(S.WAVE_DIFFICULTY[10][0] > S.WAVE_DIFFICULTY[1][0], '危险率应递增');
+  assert.ok(S.WAVE_DIFFICULTY[10][2] > S.WAVE_DIFFICULTY[1][2], '假信号率应递增');
+  assert.ok(S.WAVE_DIFFICULTY[10][1] < S.WAVE_DIFFICULTY[1][1], '强前兆率应递减');
+  console.log('PASS: 波次难度配置正确');
+})();
+
+// 13. 误报超限游戏结束
+(function () {
+  var st = S.createInitialState();
+  st.zones = [
+    { index: 0, dangerous: false, precursor: 'none' },
+    { index: 1, dangerous: false, precursor: 'none' },
+    { index: 2, dangerous: false, precursor: 'none' }
+  ];
+  st.warnings = [true, true, true];
+  st.phase = 'WARN';
+  st.false_alarm = 7;
+  S.resolveWave(st);
+  assert.strictEqual(st.false_alarm, 10, '误报应达到 10');
+  assert.strictEqual(st.gameOver, true, '误报超限应结束');
+  assert.strictEqual(st.result, 'collapse', '误报超限应为崩溃结局');
+  console.log('PASS: 误报超限游戏结束正确');
+})();
+
+// 14. 双压力耦合 — dodged 同时影响资源与风险
+(function () {
+  var st = S.createInitialState();
+  st.zones = [
+    { index: 0, dangerous: true, precursor: 'strong' },
+    { index: 1, dangerous: false, precursor: 'none' },
+    { index: 2, dangerous: false, precursor: 'none' }
+  ];
+  st.warnings = [true, false, false];
+  st.phase = 'WARN';
+  st.injury_risk = 10;
+  S.resolveWave(st);
+  var r = st.results[0];
+  assert.strictEqual(r.outcome, 'dodged');
+  assert.strictEqual(r.quotaDelta, -5, 'dodged 产量变化');
+  assert.strictEqual(r.riskDelta, -3, 'dodged 风险变化');
+  assert.strictEqual(st.injury_risk, 7, 'dodged 应降低受伤风险(10-3)');
+  console.log('PASS: dodged 双压力耦合正确');
+})();
+
+// 15. 双压力耦合 — false_alarm 同时影响资源与风险
+(function () {
+  var st = S.createInitialState();
+  st.zones = [
+    { index: 0, dangerous: false, precursor: 'none' },
+    { index: 1, dangerous: false, precursor: 'none' },
+    { index: 2, dangerous: false, precursor: 'none' }
+  ];
+  st.warnings = [true, false, false];
+  st.phase = 'WARN';
+  S.resolveWave(st);
+  var r = st.results[0];
+  assert.strictEqual(r.outcome, 'false_alarm');
+  assert.strictEqual(r.quotaDelta, -10, '误报产量变化');
+  assert.strictEqual(r.riskDelta, 3, '误报风险变化');
+  assert.strictEqual(st.injury_risk, 3, '误报应增加受伤风险');
+  console.log('PASS: false_alarm 双压力耦合正确');
+})();
+
+// 16. 双压力耦合 — injury 同时影响资源与风险
+(function () {
+  var st = S.createInitialState();
+  st.zones = [
+    { index: 0, dangerous: true, precursor: 'strong' },
+    { index: 1, dangerous: false, precursor: 'none' },
+    { index: 2, dangerous: false, precursor: 'none' }
+  ];
+  st.warnings = [false, false, false];
+  st.phase = 'WARN';
+  S.resolveWave(st);
+  var r = st.results[0];
+  assert.strictEqual(r.outcome, 'injury');
+  assert.strictEqual(r.quotaDelta, -15, '受伤产量变化');
+  assert.strictEqual(r.riskDelta, 20, '受伤风险变化');
+  console.log('PASS: injury 双压力耦合正确');
+})();
+
+console.log('\n全部 16 个测试通过');
