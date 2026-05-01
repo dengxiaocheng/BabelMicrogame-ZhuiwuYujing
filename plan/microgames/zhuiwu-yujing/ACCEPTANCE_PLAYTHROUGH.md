@@ -1,7 +1,7 @@
 # ACCEPTANCE_PLAYTHROUGH: 坠物预警
 
 ## Scripted Playthrough
-1. 开局显示 resource / pressure / risk / relation / round
+1. 开局显示 warning_tokens / quota / injury_risk / false_alarm / wave
 2. 玩家执行一次核心操作：观察前兆 -> 发出预警或继续工作 -> 工人反应 -> 事故/产量结算 -> 下一波
 3. 系统必须反馈一个资源或身体压力变化
 4. 系统必须反馈一个关系或风险变化

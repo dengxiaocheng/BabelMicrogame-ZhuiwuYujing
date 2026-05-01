@@ -13,11 +13,11 @@
 
 ## State
 
-- resource
-- pressure
-- risk
-- relation
-- round
+- warning_tokens
+- quota
+- injury_risk
+- false_alarm
+- wave
 
 ## UI
 
